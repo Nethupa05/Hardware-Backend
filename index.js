@@ -3,6 +3,11 @@ import bodyParser from 'body-parser';
 import mongoose from 'mongoose';
 import productRouter from './routers/productRoutes.js';
 import userRouter from './routers/userRoutes.js';
+import quotationRouter from './routers/quotationRoutes.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
 const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -23,7 +28,7 @@ app.get('/', (req, res) => {
 
 app.use("/api/products", productRouter)
 app.use("/api/users", userRouter)
-
+app.use("/api/quotations", quotationRouter)
 
 
 
