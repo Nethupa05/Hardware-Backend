@@ -4,34 +4,49 @@ import User from '../models/User.js';
 // Protect routes
 export const protect = async (req, res, next) => {
   try {
-    let token;
-    
+    let token = null;
+
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
     }
-    
+
     if (!token) {
       return res.status(401).json({
         success: false,
         message: 'Not authorized to access this route'
       });
     }
-    
+
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+      const user = await User.findById(decoded.id).select('-password');
+
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'No user found for this token'
+        });
+      }
+
+      if (!user.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'User account is deactivated'
+        });
+      }
+
+      req.user = user;
       next();
     } catch (error) {
       return res.status(401).json({
         success: false,
-        message: 'Not authorized to access this route'
+        message: 'Invalid or expired token'
       });
     }
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Server Error'
+      message: 'Server error in authentication'
     });
   }
 };
@@ -39,6 +54,9 @@ export const protect = async (req, res, next) => {
 // Grant access to specific roles
 export const authorize = (...roles) => {
   return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
@@ -46,5 +64,25 @@ export const authorize = (...roles) => {
       });
     }
     next();
+  };
+};
+
+// Admin or self
+export const adminOrSelf = () => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    if (req.user.role === 'admin') return next();
+
+    if (req.params.id && req.user._id.toString() === req.params.id.toString()) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: 'User is not authorized to perform this action'
+    });
   };
 };
