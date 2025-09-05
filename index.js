@@ -5,6 +5,7 @@ import productRouter from './routers/productRoutes.js';
 import userRouter from './routers/userRoutes.js';
 import quotationRouter from './routers/quotationRoutes.js';
 import dotenv from 'dotenv';
+import supplierRouter from './routers/supplierRoutes.js';
 
 dotenv.config();
 
@@ -29,7 +30,7 @@ app.get('/', (req, res) => {
 app.use("/api/products", productRouter)
 app.use("/api/users", userRouter)
 app.use("/api/quotations", quotationRouter)
-
+app.use("/api/suppliers", supplierRouter) // Add this line
 
 
 app.listen( 5000, 

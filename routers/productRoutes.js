@@ -10,30 +10,20 @@ import {
   getCategories
 } from "../controllers/productController.js";
 
+import { protect, authorize } from '../middleware/auth.js';
+
 const productRouter = express.Router();
 
-// Get all products
-productRouter.get("/", getProducts);
+// Public read routes (getProducts checks req.user to filter if not admin)
+productRouter.get("/", protect, getProducts);
+productRouter.get("/low-stock", protect, authorize('admin'), checkLowStock);
+productRouter.get("/categories", protect, getCategories);
+productRouter.get("/:id", protect, getProduct);
 
-// Get low stock products
-productRouter.get("/low-stock", checkLowStock);
-
-// Get product categories
-productRouter.get("/categories", getCategories);
-
-// Get a single product
-productRouter.get("/:id", getProduct);
-
-// Create a new product
-productRouter.post("/", createProduct);
-
-// Update a product
-productRouter.put("/:id", updateProduct);
-
-// Delete a product
-productRouter.delete("/:id", deleteProduct);
-
-// Update product stock
-productRouter.patch("/:id/stock", updateStock);
+// Admin-only write routes
+productRouter.post("/", protect, authorize('admin'), createProduct);
+productRouter.put("/:id", protect, authorize('admin'), updateProduct);
+productRouter.delete("/:id", protect, authorize('admin'), deleteProduct);
+productRouter.patch("/:id/stock", protect, authorize('admin'), updateStock);
 
 export default productRouter;

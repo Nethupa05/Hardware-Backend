@@ -1,49 +1,80 @@
+// controllers/productController.js
+import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 
-// You need to implement this function or remove it
+// Simple admin check: assumes you use `protect` middleware to set req.user
 function isAdmin(req) {
-  // Implement your admin check logic here
-  // For now, let's assume all requests are from admin
-  return true;
+  return !!(req.user && req.user.role === 'admin');
 }
 
-// Get all products with filtering and pagination
+// Get all products with optional filtering & pagination
 export async function getProducts(req, res) {
   try {
-    if (isAdmin(req)) {
-      const products = await Product.find();
-      res.json(products);
-    } else {
-      const products = await Product.find({ isActive: true }); // Changed from isAvailable to isActive
-      res.json(products);
+    const page = Math.max(1, parseInt(req.query.page || '1'));
+    const limit = Math.max(1, parseInt(req.query.limit || '50'));
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (!isAdmin(req)) {
+      filter.isActive = true;
     }
+
+    if (req.query.category) filter.category = req.query.category;
+    if (req.query.search) {
+      filter.$text = { $search: req.query.search };
+    }
+
+    const [total, products] = await Promise.all([
+      Product.countDocuments(filter),
+      Product.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('supplier', 'name email phone')
+    ]);
+
+    res.json({
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      products
+    });
   } catch (err) {
+    console.error('getProducts error:', err);
     res.status(500).json({
-      message: "Failed to get products",
+      message: 'Failed to get products',
       error: err.message
     });
   }
 }
 
-// Get a single product by ID
-// controllers/productController.js
+// Get a single product by ObjectId or SKU
 export const getProduct = async (req, res) => {
   try {
-    const sku = String(req.params.sku || '').trim();
-    if (!sku) return res.status(400).json({ message: 'SKU is required' });
+    const { id } = req.params;
+    let product = null;
 
-    const product = await Product
-      .findOne({ sku })
-      .collation({ locale: 'en', strength: 2 }) // case-insensitive match
-      .populate('supplier', 'name email phone');
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      product = await Product.findById(id).populate('supplier', 'name email phone');
+    } else {
+      product = await Product.findOne({ sku: id })
+        .collation({ locale: 'en', strength: 2 })
+        .populate('supplier', 'name email phone');
+    }
 
     if (!product) {
-      return res.status(404).json({ message: `Product not found for SKU: ${sku}` });
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    // If non-admins shouldn't see inactive products:
+    if (!isAdmin(req) && !product.isActive) {
+      return res.status(404).json({ message: 'Product not found' });
     }
 
     res.json(product);
   } catch (error) {
-    console.error('Error getting product by SKU:', error);
+    console.error('Error getting product:', error);
     res.status(500).json({ message: 'Server error while fetching product' });
   }
 };
@@ -51,25 +82,25 @@ export const getProduct = async (req, res) => {
 // Create a new product
 export const createProduct = async (req, res) => {
   try {
-    const productData = req.body;
-    
-    // Generate SKU if not provided
-    if (!productData.sku) {
-      const categoryAbbr = productData.category.substring(0, 3).toUpperCase();
+    const productData = req.body || {};
+
+    if (!productData.sku && productData.category) {
+      const categoryAbbr = String(productData.category).substring(0, 3).toUpperCase();
       const randomNum = Math.floor(1000 + Math.random() * 9000);
       productData.sku = `${categoryAbbr}-${randomNum}`;
     }
-    
+
     const product = new Product(productData);
     const savedProduct = await product.save();
-    await savedProduct.populate('supplier', 'name email phone');
-    
-    // Check if stock is low and send notification
-    if (savedProduct.isLowStock) {
-      console.log('Low stock alert would be sent for:', savedProduct.name);
+
+    // Re-query to reliably populate (avoids some mongoose version differences)
+    const populated = await Product.findById(savedProduct._id).populate('supplier', 'name email phone');
+
+    if (populated.isLowStock) {
+      console.log('Low stock alert would be sent for:', populated.name);
     }
-    
-    res.status(201).json(savedProduct);
+
+    res.status(201).json(populated);
   } catch (error) {
     console.error('Error creating product:', error);
     if (error.code === 11000) {
@@ -86,54 +117,74 @@ export const createProduct = async (req, res) => {
 // Update a product
 export const updateProduct = async (req, res) => {
   try {
-    // Don't allow updating SKU
-    if (req.body.sku) {
-      delete req.body.sku;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
     }
-    
-    const product = await Product.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    ).populate('supplier', 'name email phone');
-    
-    if (!product) {
+
+    // disallow SKU changes
+    if (req.body && req.body.sku) delete req.body.sku;
+
+    const existingProduct = await Product.findById(id);
+    if (!existingProduct) {
       return res.status(404).json({ message: 'Product not found' });
     }
-    
-    // Check if stock is low and send notification
-    if (product.isLowStock) {
-      console.log('Low stock alert would be sent for:', product.name);
+
+    // merge fields
+    Object.assign(existingProduct, req.body || {});
+
+    const updatedProduct = await existingProduct.save();
+
+    // Re-query to populate safely
+    const populated = await Product.findById(updatedProduct._id).populate('supplier', 'name email phone');
+
+    if (populated.isLowStock) {
+      console.log('Low stock alert would be sent for:', populated.name);
     }
-    
-    res.json(product);
+
+    res.json(populated);
   } catch (error) {
     console.error('Error updating product:', error);
-    if (error.name === 'CastError') {
-      return res.status(400).json({ message: 'Invalid product ID' });
-    } else if (error.name === 'ValidationError') {
+    if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(val => val.message);
       res.status(400).json({ message: errors.join(', ') });
+    } else if (error.name === 'CastError') {
+      return res.status(400).json({ message: 'Invalid product ID' });
     } else {
       res.status(500).json({ message: 'Server error while updating product' });
     }
   }
 };
 
-// Delete a product (soft delete by setting isActive to false)
+// Delete a product (soft delete — set isActive to false)
 export const deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
-    
+    const { id } = req.params;
+    console.log('Attempting to delete product ID:', id);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    const product = await Product.findById(id);
     if (!product) {
+      console.log('Product not found for deletion');
       return res.status(404).json({ message: 'Product not found' });
     }
-    
-    res.json({ message: 'Product deleted successfully' });
+
+    console.log('Product before deletion:', product.name, 'isActive:', product.isActive);
+
+    // Soft delete: set isActive = false
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      { isActive: false },
+      { new: true, runValidators: true }
+    ).populate('supplier', 'name email phone');
+
+    console.log('Product after deletion:', updatedProduct.name, 'isActive:', updatedProduct.isActive);
+
+    res.json({ message: 'Product deleted successfully', product: updatedProduct });
   } catch (error) {
     console.error('Error deleting product:', error);
     if (error.name === 'CastError') {
@@ -146,18 +197,16 @@ export const deleteProduct = async (req, res) => {
 // Check for low stock products
 export const checkLowStock = async (req, res) => {
   try {
-    // Using aggregation to compare stock with minStock
     const lowStockProducts = await Product.find({
       $expr: { $lte: ['$stock', '$minStock'] },
       isActive: true,
-      stock: { $gt: 0 } // Exclude out-of-stock items
+      stock: { $gt: 0 }
     }).populate('supplier');
-    
-    // Send notifications for low stock items
+
     lowStockProducts.forEach(product => {
       console.log('Low stock alert would be sent for:', product.name);
     });
-    
+
     res.json({
       count: lowStockProducts.length,
       products: lowStockProducts
@@ -172,37 +221,37 @@ export const checkLowStock = async (req, res) => {
 export const updateStock = async (req, res) => {
   try {
     const { operation, quantity } = req.body;
-    
+
     if (!operation || !quantity || quantity <= 0) {
       return res.status(400).json({ message: 'Valid operation and quantity are required' });
     }
-    
-    const product = await Product.findById(req.params.id);
-    
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
     }
-    
+
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
     if (operation === 'add') {
-      product.stock += quantity;
+      product.stock += Number(quantity);
     } else if (operation === 'subtract') {
-      if (product.stock < quantity) {
+      if (product.stock < Number(quantity)) {
         return res.status(400).json({ message: 'Insufficient stock' });
       }
-      product.stock -= quantity;
+      product.stock -= Number(quantity);
     } else {
       return res.status(400).json({ message: 'Invalid operation. Use "add" or "subtract"' });
     }
-    
+
     const updatedProduct = await product.save();
-    await updatedProduct.populate('supplier', 'name email phone');
-    
-    // Check if stock is low and send notification
-    if (updatedProduct.isLowStock) {
-      console.log('Low stock alert would be sent for:', updatedProduct.name);
+    const populated = await Product.findById(updatedProduct._id).populate('supplier', 'name email phone');
+
+    if (populated.isLowStock) {
+      console.log('Low stock alert would be sent for:', populated.name);
     }
-    
-    res.json(updatedProduct);
+
+    res.json(populated);
   } catch (error) {
     console.error('Error updating stock:', error);
     if (error.name === 'CastError') {
