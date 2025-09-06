@@ -26,7 +26,8 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true,
-    minlength: 6
+    minlength: 6,
+    select: false // Don't return password by default
   },
   role: {
     type: String,
@@ -53,9 +54,18 @@ userSchema.pre('save', async function(next) {
   next();
 });
 
-// Compare password method
-userSchema.methods.correctPassword = async function(candidatePassword, userPassword) {
-  return await bcrypt.compare(candidatePassword, userPassword);
+// Compare password method (use as: user.correctPassword(candidatePassword))
+userSchema.methods.correctPassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
+
+// Ensure password is not returned in JSON output
+userSchema.set('toJSON', {
+  transform: function(doc, ret, options) {
+    delete ret.password;
+    delete ret.__v;
+    return ret;
+  }
+});
 
 export default mongoose.model('User', userSchema);
