@@ -42,6 +42,10 @@ const quotationSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  adminNotes: {
+    type: String,
+    required: false
+  },
   fileUrl: {
     type: String,
     required: false
@@ -50,6 +54,16 @@ const quotationSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'processing', 'completed', 'rejected'],
     default: 'pending'
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
   },
   createdAt: {
     type: Date,

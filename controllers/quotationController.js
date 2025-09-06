@@ -1,7 +1,7 @@
 import Quotation from '../models/Quotation.js';
 import Product from '../models/Product.js';
 
-// Create a new quotation
+// Create a new quotation (Customer only)
 export const createQuotation = async (req, res) => {
   try {
     const {
@@ -15,6 +15,15 @@ export const createQuotation = async (req, res) => {
       items,
       notes
     } = req.body;
+
+    // If user is authenticated, use their info
+    let customerEmail = email;
+    let customerName = name;
+    
+    if (req.user) {
+      customerEmail = req.user.email;
+      customerName = req.user.name || name;
+    }
 
     // Calculate total amount
     let totalAmount = 0;
@@ -30,8 +39,8 @@ export const createQuotation = async (req, res) => {
     }
 
     const quotation = new Quotation({
-      name,
-      email,
+      name: customerName,
+      email: customerEmail,
       phone,
       company,
       address,
@@ -40,90 +49,252 @@ export const createQuotation = async (req, res) => {
       items,
       totalAmount,
       notes,
-      fileUrl: req.file ? req.file.path : null
+      fileUrl: req.file ? req.file.path : null,
+      createdBy: req.user ? req.user._id : null // Track who created the quotation
     });
 
     const savedQuotation = await quotation.save();
-    res.status(201).json(savedQuotation);
+    res.status(201).json({
+      success: true,
+      data: savedQuotation
+    });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-// Get all quotations
+// Get all quotations (Admin only)
 export const getQuotations = async (req, res) => {
   try {
-    const quotations = await Quotation.find().sort({ createdAt: -1 });
-    res.json(quotations);
+    const { page = 1, limit = 10, search, status } = req.query;
+    
+    // Build filter object
+    const filter = {};
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+    
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { product: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    const quotations = await Quotation.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .populate('createdBy', 'name email'); // Populate user info if available
+      
+    const total = await Quotation.countDocuments(filter);
+    
+    res.json({
+      success: true,
+      data: {
+        quotations,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+        total
+      }
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-// Get quotation by ID
+// Get quotation by ID (Admin or owner)
 export const getQuotationById = async (req, res) => {
   try {
-    const quotation = await Quotation.findById(req.params.id);
+    const quotation = await Quotation.findById(req.params.id).populate('createdBy', 'name email');
+    
     if (!quotation) {
-      return res.status(404).json({ message: 'Quotation not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Quotation not found'
+      });
     }
-    res.json(quotation);
+    
+    // Check if user is admin or the owner of the quotation
+    if (req.user.role !== 'admin' && quotation.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: quotation
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-// Update quotation status
+// Update quotation status (Admin only)
 export const updateQuotationStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, adminNotes } = req.body;
     const quotation = await Quotation.findByIdAndUpdate(
       req.params.id,
-      { status },
-      { new: true }
+      { 
+        status,
+        adminNotes: adminNotes || undefined,
+        updatedBy: req.user._id // Track who updated the quotation
+      },
+      { new: true, runValidators: true }
     );
     
     if (!quotation) {
-      return res.status(404).json({ message: 'Quotation not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Quotation not found'
+      });
     }
     
-    res.json(quotation);
+    res.json({
+      success: true,
+      data: quotation
+    });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-// Delete quotation
+// Delete quotation (Admin only)
 export const deleteQuotation = async (req, res) => {
   try {
     const quotation = await Quotation.findByIdAndDelete(req.params.id);
     if (!quotation) {
-      return res.status(404).json({ message: 'Quotation not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Quotation not found'
+      });
     }
-    res.json({ message: 'Quotation deleted successfully' });
+    res.json({
+      success: true,
+      message: 'Quotation deleted successfully'
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-// Get quotations by status
+// Get quotations by status (Admin only)
 export const getQuotationsByStatus = async (req, res) => {
   try {
     const { status } = req.params;
-    const quotations = await Quotation.find({ status }).sort({ createdAt: -1 });
-    res.json(quotations);
+    const { page = 1, limit = 10 } = req.query;
+    
+    const quotations = await Quotation.find({ status })
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .populate('createdBy', 'name email');
+      
+    const total = await Quotation.countDocuments({ status });
+    
+    res.json({
+      success: true,
+      data: {
+        quotations,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+        total
+      }
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
+// Get my quotations (Customer only)
 export const getMyQuotations = async (req, res) => {
   try {
-    // Assuming req.user contains the logged-in user's information
-    // You might need to adjust this based on how you identify user's quotations
-    const quotations = await Quotation.find({ email: req.user.email }).sort({ createdAt: -1 });
-    res.json(quotations);
+    const { page = 1, limit = 10, status } = req.query;
+    
+    // Build filter object
+    const filter = { createdBy: req.user._id };
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+    
+    const quotations = await Quotation.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+      
+    const total = await Quotation.countDocuments(filter);
+    
+    res.json({
+      success: true,
+      data: {
+        quotations,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+        total
+      }
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Get quotation statistics (Admin only)
+export const getQuotationStats = async (req, res) => {
+  try {
+    const total = await Quotation.countDocuments();
+    const pending = await Quotation.countDocuments({ status: 'pending' });
+    const processing = await Quotation.countDocuments({ status: 'processing' });
+    const completed = await Quotation.countDocuments({ status: 'completed' });
+    const rejected = await Quotation.countDocuments({ status: 'rejected' });
+    
+    // Get recent quotations (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const recent = await Quotation.countDocuments({
+      createdAt: { $gte: sevenDaysAgo }
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        total,
+        pending,
+        processing,
+        completed,
+        rejected,
+        recent
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };

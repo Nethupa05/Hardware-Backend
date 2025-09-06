@@ -4,16 +4,12 @@ import User from '../models/User.js';
 // Protect routes
 export const protect = async (req, res, next) => {
   try {
-    let token = null;
-
-    // Check Authorization header
+    let token;
+    
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
     }
-
-    // If you want to support cookie-based token, add cookie-parser and uncomment:
-    // if (!token && req.cookies && req.cookies.token) token = req.cookies.token;
-
+    
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -44,13 +40,13 @@ export const protect = async (req, res, next) => {
     } catch (error) {
       return res.status(401).json({
         success: false,
-        message: 'Not authorized to access this route'
+        message: 'Invalid or expired token'
       });
     }
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Server Error'
+      message: 'Server error in authentication'
     });
   }
 };
