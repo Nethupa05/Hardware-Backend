@@ -66,23 +66,3 @@ export const authorize = (...roles) => {
     next();
   };
 };
-
-// Admin or self
-export const adminOrSelf = () => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-
-    if (req.user.role === 'admin') return next();
-
-    if (req.params.id && req.user._id.toString() === req.params.id.toString()) {
-      return next();
-    }
-
-    return res.status(403).json({
-      success: false,
-      message: 'User is not authorized to perform this action'
-    });
-  };
-};

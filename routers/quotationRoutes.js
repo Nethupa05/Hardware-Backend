@@ -7,22 +7,26 @@ import {
   updateQuotationStatus,
   deleteQuotation,
   getQuotationsByStatus,
-  getMyQuotations
+  getMyQuotations,
+  getQuotationStats
 } from '../controllers/quotationController.js';
-import { protect } from '../middleware/auth.js'; // Changed to named import
+import { protect, authorize } from '../middleware/auth.js'; // Changed to use authorize instead of admin
 import upload from '../utils/upload.js';
 
 const router = express.Router();
 
-// Public route for submitting quotations
+// Public route for submitting quotations (customers can create without auth)
 router.post('/', upload.single('file'), createQuotation);
 
-// Protected routes (require authentication) - use 'protect' instead of 'auth'
-router.get('/', protect, getQuotations);
+// Protected customer routes
 router.get('/my-quotations', protect, getMyQuotations);
-router.get('/status/:status', protect, getQuotationsByStatus);
-router.get('/:id', protect, getQuotationById);
-router.patch('/:id/status', protect, updateQuotationStatus);
-router.delete('/:id', protect, deleteQuotation);
+
+// Protected admin routes - use authorize('admin') instead of admin
+router.get('/', protect, authorize('admin'), getQuotations);
+router.get('/stats', protect, authorize('admin'), getQuotationStats);
+router.get('/status/:status', protect, authorize('admin'), getQuotationsByStatus);
+router.get('/:id', protect, getQuotationById); // Both admin and owner can access
+router.patch('/:id/status', protect, authorize('admin'), updateQuotationStatus);
+router.delete('/:id', protect, authorize('admin'), deleteQuotation);
 
 export default router;
