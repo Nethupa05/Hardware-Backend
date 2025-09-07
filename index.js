@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import productRouter from './routers/productRoutes.js';
 import userRouter from './routers/userRoutes.js';
 import quotationRouter from './routers/quotationRoutes.js';
+import reservationRouter from './routers/reservationRoutes.js';
 import dotenv from 'dotenv';
 import supplierRouter from './routers/supplierRoutes.js';
 
@@ -31,6 +32,7 @@ app.use("/api/products", productRouter)
 app.use("/api/users", userRouter)
 app.use("/api/quotations", quotationRouter)
 app.use("/api/suppliers", supplierRouter) // Add this line
+app.use("/api/reservations", reservationRouter);
 
 
 app.listen( 5000, 
