@@ -6,14 +6,13 @@ import { sendTokenResponse } from '../utils/jwt.js';
 // @access  Public
 export const register = async (req, res) => {
   try {
-    const { fullName, email, phoneNumber, deliveryAddress, password, role } = req.body;
+    const { fullName, email, phoneNumber, password, role } = req.body;
 
     // optional: enforce only admin can create an admin (if you want)
     const user = await User.create({
       fullName,
       email,
       phoneNumber,
-      deliveryAddress,
       password,
       role
     });
@@ -155,7 +154,7 @@ export const getUsers = async (req, res) => {
 // @access  Private (admin) OR PUT /api/users/me (self)
 export const updateUser = async (req, res) => {
   try {
-    const allowedFields = ['fullName', 'phoneNumber', 'deliveryAddress', 'role', 'isActive'];
+    const allowedFields = ['fullName', 'phoneNumber', 'role', 'isActive'];
     const updates = {};
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
@@ -194,7 +193,7 @@ export const updateMe = async (req, res) => {
 
     // Prevent updating role or isActive by normal customers
     const updates = {};
-    const allowedForSelf = ['fullName', 'phoneNumber', 'deliveryAddress'];
+    const allowedForSelf = ['fullName', 'phoneNumber'];
     allowedForSelf.forEach(field => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     });

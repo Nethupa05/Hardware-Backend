@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema({
-  name: {
+  fullName: {
     type: String,
     required: [true, 'Please add a name'],
     trim: true,
@@ -32,10 +32,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: false
   },
-  company: {
-    type: String,
-    required: false
-  },
   isActive: {
     type: Boolean,
     default: true
@@ -57,8 +53,8 @@ userSchema.pre('save', async function(next) {
 });
 
 // Compare password method
-userSchema.methods.correctPassword = async function(candidatePassword, userPassword) {
-  return await bcrypt.compare(candidatePassword, userPassword);
+userSchema.methods.correctPassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
 
 export default mongoose.model('User', userSchema);
