@@ -90,6 +90,19 @@ export const createProduct = async (req, res) => {
       productData.sku = `${categoryAbbr}-${randomNum}`;
     }
 
+    // Handle image upload
+    if (req.file) {
+      // File upload - save file path
+      productData.image = `/uploads/products/${req.file.filename}`;
+      console.log('File uploaded:', req.file.filename);
+    } else if (productData.image && productData.image.trim() !== '') {
+      // URL input - use URL as-is
+      productData.image = productData.image.trim();
+      console.log('Using image URL:', productData.image);
+    }
+
+    console.log('Product data before save:', productData);
+
     const product = new Product(productData);
     const savedProduct = await product.save();
 
@@ -131,6 +144,19 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
+    // Handle image upload
+    if (req.file) {
+      // File upload - save file path
+      req.body.image = `/uploads/products/${req.file.filename}`;
+      console.log('File uploaded for update:', req.file.filename);
+    } else if (req.body.image && req.body.image.trim() !== '') {
+      // URL input - use URL as-is
+      req.body.image = req.body.image.trim();
+      console.log('Using image URL for update:', req.body.image);
+    }
+
+    console.log('Update data:', req.body);
+
     // merge fields
     Object.assign(existingProduct, req.body || {});
 
@@ -157,11 +183,11 @@ export const updateProduct = async (req, res) => {
   }
 };
 
-// Delete a product (soft delete — set isActive to false)
+// Delete a product (permanent deletion)
 export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('Attempting to delete product ID:', id);
+    console.log('Attempting to permanently delete product ID:', id);
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid product ID' });
@@ -173,18 +199,14 @@ export const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    console.log('Product before deletion:', product.name, 'isActive:', product.isActive);
+    console.log('Product to be permanently deleted:', product.name);
 
-    // Soft delete: set isActive = false
-    const updatedProduct = await Product.findByIdAndUpdate(
-      id,
-      { isActive: false },
-      { new: true, runValidators: true }
-    ).populate('supplier', 'name email phone');
+    // Permanent deletion: remove from database
+    await Product.findByIdAndDelete(id);
 
-    console.log('Product after deletion:', updatedProduct.name, 'isActive:', updatedProduct.isActive);
+    console.log('Product permanently deleted:', product.name);
 
-    res.json({ message: 'Product deleted successfully', product: updatedProduct });
+    res.json({ message: 'Product permanently deleted successfully' });
   } catch (error) {
     console.error('Error deleting product:', error);
     if (error.name === 'CastError') {

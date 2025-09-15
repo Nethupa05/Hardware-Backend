@@ -12,7 +12,7 @@ export const register = async (req, res) => {
     const user = await User.create({
       fullName,
       email,
-      phoneNumber,
+      phone: phoneNumber, // Map phoneNumber to phone field
       password,
       role
     });
@@ -39,9 +39,13 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    // EDITED: Added console logging for debugging
+    console.log('Login attempt:', { email, password: password ? '***' : 'missing' });
 
     // Validate email & password
     if (!email || !password) {
+      console.log('Missing email or password');
       return res.status(400).json({
         success: false,
         message: 'Please provide an email and password'
@@ -50,8 +54,10 @@ export const login = async (req, res) => {
 
     // Check for user (include password)
     const user = await User.findOne({ email }).select('+password');
+    console.log('User found:', user ? 'Yes' : 'No');
 
     if (!user) {
+      console.log('User not found for email:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -60,27 +66,26 @@ export const login = async (req, res) => {
 
     // Check if password matches (method uses stored password)
     const isMatch = await user.correctPassword(password);
+    console.log('Password match:', isMatch);
+    
     if (!isMatch) {
+      console.log('Password mismatch for user:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
 
-    // Check active account
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is deactivated'
-      });
-    }
+    // EDITED: Removed isActive check since we're using permanent deletion now
 
     // Update last login
     user.lastLogin = Date.now();
     await user.save();
 
+    console.log('Login successful for user:', email);
     sendTokenResponse(user, 200, res);
   } catch (err) {
+    console.error('Login error:', err);
     res.status(400).json({
       success: false,
       message: err.message
@@ -154,7 +159,8 @@ export const getUsers = async (req, res) => {
 // @access  Private (admin) OR PUT /api/users/me (self)
 export const updateUser = async (req, res) => {
   try {
-    const allowedFields = ['fullName', 'phoneNumber', 'role', 'isActive'];
+    // EDITED: Removed isActive from allowed fields since we're using permanent deletion
+    const allowedFields = ['fullName', 'phoneNumber', 'role'];
     const updates = {};
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
@@ -193,7 +199,7 @@ export const updateMe = async (req, res) => {
 
     // Prevent updating role or isActive by normal customers
     const updates = {};
-    const allowedForSelf = ['fullName', 'phoneNumber'];
+    const allowedForSelf = ['fullName', 'phone'];
     allowedForSelf.forEach(field => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     });
@@ -221,40 +227,38 @@ export const updateMe = async (req, res) => {
   }
 };
 
-// @desc    Soft delete user (admin deletes any user)
+// @desc    Permanently delete user (admin deletes any user)
 // @route   DELETE /api/users/:id
 // @access  Private (admin)
 export const deleteUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
+    // EDITED: Changed from soft delete to permanent deletion
+    const user = await User.findByIdAndDelete(req.params.id);
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    res.status(200).json({ success: true, message: "User deleted (soft delete)" });
+    res.status(200).json({ success: true, message: "User permanently deleted" });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 };
 
-// @desc    Soft delete own account
+// @desc    Permanently delete own account
 // @route   DELETE /api/users/me
 // @access  Private (owner)
 export const deleteMe = async (req, res) => {
   try {
+    // EDITED: Changed from soft delete to permanent deletion
     const userId = req.user._id;
-    const user = await User.findByIdAndUpdate(userId, { isActive: false }, { new: true });
+    const user = await User.findByIdAndDelete(userId);
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    res.status(200).json({ success: true, message: "Your account has been deactivated" });
+    res.status(200).json({ success: true, message: "Your account has been permanently deleted" });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }

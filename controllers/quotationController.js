@@ -13,7 +13,9 @@ export const createQuotation = async (req, res) => {
       productCategory,
       product,
       items,
-      notes
+      notes,
+      totalAmount,
+      createdBy
     } = req.body;
 
     // If user is authenticated, use their info
@@ -22,21 +24,35 @@ export const createQuotation = async (req, res) => {
     
     if (req.user) {
       customerEmail = req.user.email;
-      customerName = req.user.name || name;
+      customerName = req.user.fullName || req.user.name || name;
     }
 
-    // Calculate total amount
-    let totalAmount = 0;
+    // Calculate total amount and process items
+    let calculatedTotalAmount = 0;
+    let processedItems = [];
+    
     if (items && items.length > 0) {
       for (const item of items) {
-        // Get product price from database
-        const productData = await Product.findOne({ name: item.product });
+        // Get product data from database using the product ID
+        const productData = await Product.findById(item.product);
         if (productData) {
-          item.price = productData.price;
-          totalAmount += productData.price * item.quantity;
+          const itemTotal = productData.price * item.quantity;
+          calculatedTotalAmount += itemTotal;
+          
+          processedItems.push({
+            product: productData.name, // Store product name for display
+            productId: item.product,   // Store product ID for reference
+            category: item.category,   // Store category
+            quantity: item.quantity,
+            price: productData.price,
+            subtotal: itemTotal
+          });
         }
       }
     }
+
+    // Use provided totalAmount or calculated amount
+    const finalTotalAmount = totalAmount || calculatedTotalAmount;
 
     const quotation = new Quotation({
       name: customerName,
@@ -44,13 +60,13 @@ export const createQuotation = async (req, res) => {
       phone,
       company,
       address,
-      productCategory,
-      product,
-      items,
-      totalAmount,
+      productCategory: productCategory || (processedItems.length > 0 ? processedItems[0].category : ''),
+      product: product || (processedItems.length > 0 ? processedItems[0].product : ''),
+      items: processedItems,
+      totalAmount: finalTotalAmount,
       notes,
       fileUrl: req.file ? req.file.path : null,
-      createdBy: req.user ? req.user._id : null // Track who created the quotation
+      createdBy: createdBy || (req.user ? req.user._id : null)
     });
 
     const savedQuotation = await quotation.save();
@@ -59,6 +75,7 @@ export const createQuotation = async (req, res) => {
       data: savedQuotation
     });
   } catch (error) {
+    console.error('Error creating quotation:', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -233,8 +250,14 @@ export const getMyQuotations = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
     
-    // Build filter object
-    const filter = { createdBy: req.user._id };
+    // Build filter object - include quotations by user ID OR by email
+    const filter = {
+      $or: [
+        { createdBy: req.user._id },
+        { email: req.user.email }
+      ]
+    };
+    
     if (status && status !== 'all') {
       filter.status = status;
     }
