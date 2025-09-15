@@ -1,5 +1,6 @@
 import Supplier from '../models/Supplier.js';
 import Product from '../models/Product.js';
+import mongoose from 'mongoose';
 
 // Add a new supplier
 export const addSupplier = async (req, res) => {
@@ -114,31 +115,36 @@ export const updateSupplier = async (req, res) => {
   }
 };
 
-// Remove a supplier (mark as inactive)
+// Remove a supplier (permanent deletion)
 export const removeSupplier = async (req, res) => {
   try {
-    const supplier = await Supplier.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
-    
-    if (!supplier) {
-      return res.status(404).json({
-        success: false,
-        message: 'Supplier not found'
-      });
+    const { id } = req.params;
+    console.log('Attempting to permanently delete supplier ID:', id);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid supplier ID' });
     }
-    
-    res.status(200).json({
-      success: true,
-      message: 'Supplier removed successfully'
-    });
+
+    const supplier = await Supplier.findById(id);
+    if (!supplier) {
+      console.log('Supplier not found for deletion');
+      return res.status(404).json({ message: 'Supplier not found' });
+    }
+
+    console.log('Supplier to be permanently deleted:', supplier.name);
+
+    // Permanent deletion: remove from database
+    await Supplier.findByIdAndDelete(id);
+
+    console.log('Supplier permanently deleted:', supplier.name);
+
+    res.json({ message: 'Supplier permanently deleted successfully' });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    console.error('Error deleting supplier:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ message: 'Invalid supplier ID' });
+    }
+    res.status(500).json({ message: 'Server error while deleting supplier' });
   }
 };
 

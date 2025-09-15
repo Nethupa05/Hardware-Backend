@@ -23,16 +23,19 @@ const quotationSchema = new mongoose.Schema({
   },
   productCategory: {
     type: String,
-    required: true
+    required: false
   },
   product: {
     type: String,
-    required: true
+    required: false
   },
   items: [{
     product: String,
+    productId: String,
+    category: String,
     quantity: Number,
-    price: Number
+    price: Number,
+    subtotal: Number
   }],
   totalAmount: {
     type: Number,
